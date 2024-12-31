@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"mime/multipart"
 	"net/http"
 
@@ -38,6 +39,47 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		respondWithError(w, http.StatusBadRequest, "Unable to parse from file", err)
 		return
 	}
+
+	fileHeader := make([]byte, 512)
+	_, err = file.Read(fileHeader)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Unable to read file header", err)
+		return
+	}
+
+	// Reset the file pointer
+	_, err = file.Seek(0, 0)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Unable to seek file", err)
+		return
+	}
+	headerContentType := http.DetectContentType(fileHeader)
+	fmt.Println("Content Type: ", headerContentType)
+
+	//read all the file content into a byte slice
+	fileBytes := make([]byte, 512)
+	var fileContent []byte
+	for {
+		n, err := file.Read(fileBytes)
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			respondWithError(w, http.StatusBadRequest, "Unable to read file content", err)
+			return
+		}
+		fileContent = append(fileContent, fileBytes[:n]...)
+	}
+
+	videoInfo, err := cfg.db.GetVideo(videoID)
+
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Unable to get video", err)
+		return
+	}
+
+	fmt.Println("videoInfo", videoInfo)
+
 	defer func(file multipart.File) {
 		err := file.Close()
 		if err != nil {
