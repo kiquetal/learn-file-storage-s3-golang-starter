@@ -1,11 +1,13 @@
 package main
 
 import (
-	"encoding/base64"
 	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/auth"
 	"github.com/google/uuid"
@@ -72,6 +74,9 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		fileContent = append(fileContent, fileBytes[:n]...)
 	}
 
+	// reset the file pointer
+	_, err = file.Seek(0, 0)
+
 	videoInfo, err := cfg.db.GetVideo(videoID)
 
 	if err != nil {
@@ -83,9 +88,26 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 	newThumbnail.data = fileContent
 	newThumbnail.mediaType = headerContentType
 
-	var base64String = base64.StdEncoding.EncodeToString(newThumbnail.data)
+	//create a new file
 
-	var dataURL = "data:" + headerContentType + ";base64," + base64String
+	var extensionFile = strings.Split(headerContentType, "/")[1]
+	create, err := os.Create(fmt.Sprintf("%s/%s.%s", filepath.Clean(cfg.assetsRoot), videoID, extensionFile))
+
+	if err != nil {
+		fmt.Println("Error creating file", err)
+		return
+	}
+
+	written, err := io.Copy(create, file)
+	if err != nil {
+
+		fmt.Println("Error writing file", err)
+	}
+
+	fmt.Println("Written", written, "bytes")
+
+	var nameVideo = fmt.Sprintf("%s.%s", videoID, extensionFile)
+	var dataURL = fmt.Sprintf("http://localhost:%s/%s/%s", cfg.port, filepath.Clean(cfg.assetsRoot), nameVideo)
 
 	videoInfo.ThumbnailURL = &dataURL
 	err = cfg.db.UpdateVideo(videoInfo)
