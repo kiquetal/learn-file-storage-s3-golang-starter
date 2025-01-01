@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"io"
+	"mime"
 	"mime/multipart"
 	"net/http"
 	"os"
@@ -81,6 +82,18 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Unable to get video", err)
+		return
+	}
+
+	mimeType, _, err := mime.ParseMediaType(headerContentType)
+
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Unable to parse media type", err)
+	}
+
+	if mimeType != "image/jpeg" && mimeType != "image/png" {
+		fmt.Printf("Invalid media type: %s", mimeType)
+		respondWithError(w, http.StatusBadRequest, "Invalid media type", err)
 		return
 	}
 
