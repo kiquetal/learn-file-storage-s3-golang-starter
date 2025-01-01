@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/base64"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -78,8 +79,20 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	fmt.Println("videoInfo", videoInfo)
+	var newThumbnail thumbnail
+	newThumbnail.data = fileContent
+	newThumbnail.mediaType = headerContentType
 
+	var base64String = base64.StdEncoding.EncodeToString(newThumbnail.data)
+
+	var dataURL = "data:" + headerContentType + ";base64," + base64String
+
+	videoInfo.ThumbnailURL = &dataURL
+	err = cfg.db.UpdateVideo(videoInfo)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Unable to update video", err)
+		return
+	}
 	defer func(file multipart.File) {
 		err := file.Close()
 		if err != nil {
@@ -87,5 +100,5 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		}
 	}(file)
 
-	respondWithJSON(w, http.StatusOK, struct{}{})
+	respondWithJSON(w, http.StatusOK, videoInfo)
 }
