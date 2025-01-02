@@ -128,7 +128,7 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 
 	fmt.Println("Written", written, "bytes")
 
-	var nameVideo = fmt.Sprintf("%s.%s", videoID, extensionFile)
+	var nameVideo = fmt.Sprintf("%s.%s", stringBase64, extensionFile)
 	var dataURL = fmt.Sprintf("http://localhost:%s/%s/%s", cfg.port, filepath.Clean(cfg.assetsRoot), nameVideo)
 
 	videoInfo.ThumbnailURL = &dataURL

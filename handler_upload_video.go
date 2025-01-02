@@ -1,13 +1,18 @@
 package main
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/auth"
 	"github.com/google/uuid"
+	"io"
 	"mime"
 	"net/http"
+	"os"
+	"strings"
 )
 
 func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request) {
@@ -72,11 +77,16 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	//check header content type
 	headerContentType := header.Header.Get("Content-Type")
 
-	_, _, err = mime.ParseMediaType(headerContentType)
-	if err != nil {
+	mediaType, _, err1 := mime.ParseMediaType(headerContentType)
+	if err1 != nil {
 		return
 	}
 	fmt.Println("Content Type: ", headerContentType)
+
+	if mediaType != "video/mp4" {
+		respondWithError(w, http.StatusBadRequest, "Invalid content type", nil)
+		return
+	}
 
 	//generate 32bit using random
 
@@ -87,6 +97,45 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	}
 
 	var stringBase64 = base64.StdEncoding.EncodeToString(randomId)
+
+	var tempFile, _ = os.CreateTemp("", "tubely-upload.mp4")
+
+	defer os.Remove(tempFile.Name())
+
+	defer tempFile.Close()
+
+	written, errFile := io.Copy(tempFile, file)
+	if errFile != nil {
+		return
+	}
+
+	tempFile.Seek(0, io.SeekStart)
+	var keyFile = fmt.Sprintf("videos/%s.%s", stringBase64, strings.Split(mediaType, "/")[1])
+
+	fmt.Printf("The key file is %v\n", keyFile)
+	var putObjectInput = s3.PutObjectInput{
+		Bucket:      &cfg.s3Bucket,
+		Key:         &keyFile,
+		Body:        tempFile,
+		ContentType: &headerContentType,
+	}
+	_, err = cfg.s3Client.PutObject(context.Background(), &putObjectInput)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Couldn't upload video", err)
+		return
+	}
+
+	// update db
+	var s3URL = fmt.Sprintf("https://%s.s3.%s.amazonaws.com/%s", cfg.s3Bucket, cfg.s3Region, keyFile)
+	videodb.VideoURL = &s3URL
+	err = cfg.db.UpdateVideo(videodb)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Couldn't update video", err)
+		return
+	}
+
+	fmt.Println("Written: ", written)
+
 	fmt.Println("Random ID: ", stringBase64)
 
 	fmt.Printf("uploading video for video %v by user %v\n", videoID, userID)
