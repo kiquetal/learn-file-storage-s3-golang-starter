@@ -72,7 +72,10 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	//check header content type
 	headerContentType := header.Header.Get("Content-Type")
 
-	mime.ParseMediaType(headerContentType)
+	_, _, err = mime.ParseMediaType(headerContentType)
+	if err != nil {
+		return
+	}
 	fmt.Println("Content Type: ", headerContentType)
 
 	//generate 32bit using random
