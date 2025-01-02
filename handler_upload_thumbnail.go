@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"mime"
@@ -101,10 +103,17 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 	newThumbnail.data = fileContent
 	newThumbnail.mediaType = headerContentType
 
-	//create a new file
+	var byteArray = make([]byte, 32)
+	_, err = rand.Read(byteArray)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Unable to generate random ID", err)
+		return
+	}
+
+	var stringBase64 = base64.StdEncoding.EncodeToString(byteArray)
 
 	var extensionFile = strings.Split(headerContentType, "/")[1]
-	create, err := os.Create(fmt.Sprintf("%s/%s.%s", filepath.Clean(cfg.assetsRoot), videoID, extensionFile))
+	create, err := os.Create(fmt.Sprintf("%s/%s.%s", filepath.Clean(cfg.assetsRoot), stringBase64, extensionFile))
 
 	if err != nil {
 		fmt.Println("Error creating file", err)
