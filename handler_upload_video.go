@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/auth"
@@ -12,7 +13,16 @@ import (
 	"mime"
 	"net/http"
 	"os"
+	"os/exec"
 	"strings"
+)
+
+type AspectRatio string
+
+const (
+	AspectRatioLandscape AspectRatio = "landscape"
+	AspectRatioPortrait  AspectRatio = "portrait"
+	AspectRatioOther     AspectRatio = "other"
 )
 
 func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request) {
@@ -96,7 +106,9 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	var stringBase64 = base64.StdEncoding.EncodeToString(randomId)
+	var stringBase64 = base64.URLEncoding.EncodeToString(randomId)
+
+	fmt.Printf("Url encoding is %v\n", stringBase64)
 
 	var tempFile, _ = os.CreateTemp("", "tubely-upload.mp4")
 
@@ -110,7 +122,20 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	}
 
 	tempFile.Seek(0, io.SeekStart)
-	var keyFile = fmt.Sprintf("videos/%s.%s", stringBase64, strings.Split(mediaType, "/")[1])
+
+	fmt.Printf("The path of the temp file is %v\n", tempFile.Name())
+	//get aspect ratio
+	fmt.Printf("Line 116\n")
+	aspectRatio, err := getVideoAspectRatio(tempFile.Name())
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Couldn't get aspect ratio", err)
+		return
+	}
+
+	var prefix string = fmt.Sprintf("%s/%s", aspectRatio, stringBase64)
+
+	fmt.Printf("The prefix is %v\n", prefix)
+	var keyFile = fmt.Sprintf("%s.%s", prefix, strings.Split(mediaType, "/")[1])
 
 	fmt.Printf("The key file is %v\n", keyFile)
 	var putObjectInput = s3.PutObjectInput{
@@ -139,4 +164,55 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	fmt.Println("Random ID: ", stringBase64)
 
 	fmt.Printf("uploading video for video %v by user %v\n", videoID, userID)
+}
+
+func getVideoAspectRatio(filepath string) (AspectRatio, error) {
+
+	fmt.Printf("The path of the file is %v\n", filepath)
+	cmd := exec.Command("/usr/bin/ffprobe", "-v", "error", "-print_format", "json", "-show_streams", filepath)
+	output, err := cmd.Output()
+
+	if err != nil {
+
+		fmt.Println("Error running ffprobe", err)
+		return "", err
+	}
+	var result map[string]interface{}
+
+	err = json.Unmarshal(output, &result)
+	if err != nil {
+		fmt.Println("Error unmarshalling json", err)
+		return "", err
+	}
+
+	streams := result["streams"].([]interface{})
+	fmt.Printf("The streams are %v\n", streams)
+	firstStream := streams[0].(map[string]interface{})
+
+	width := firstStream["width"].(float64)
+	height := firstStream["height"].(float64)
+
+	gcd := func(a, b int) int {
+		for b != 0 {
+			a, b = b, a%b
+		}
+		return a
+	}
+
+	gcdValue := gcd(int(width), int(height))
+
+	widthS := int(width) / int(gcdValue)
+	heightS := int(height) / int(gcdValue)
+
+	if widthS > heightS {
+		return AspectRatioLandscape, nil
+	} else {
+		if widthS < heightS {
+			return AspectRatioPortrait, nil
+		} else {
+
+			return AspectRatioOther, nil
+		}
+	}
+
 }
