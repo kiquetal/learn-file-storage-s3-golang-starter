@@ -124,6 +124,16 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	tempFile.Seek(0, io.SeekStart)
 
 	fmt.Printf("The path of the temp file is %v\n", tempFile.Name())
+
+	startFastFile, err := processVideoForFastStart(tempFile.Name())
+	if err != nil {
+		fmt.Printf("Error processing video for fast start %v\n", err)
+		return
+	}
+
+	defer os.Remove(startFastFile)
+
+	fileToUpload, _ := os.Open(startFastFile)
 	//get aspect ratio
 	fmt.Printf("Line 116\n")
 	aspectRatio, err := getVideoAspectRatio(tempFile.Name())
@@ -141,7 +151,7 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	var putObjectInput = s3.PutObjectInput{
 		Bucket:      &cfg.s3Bucket,
 		Key:         &keyFile,
-		Body:        tempFile,
+		Body:        fileToUpload,
 		ContentType: &headerContentType,
 	}
 	_, err = cfg.s3Client.PutObject(context.Background(), &putObjectInput)
@@ -215,4 +225,16 @@ func getVideoAspectRatio(filepath string) (AspectRatio, error) {
 		}
 	}
 
+}
+func processVideoForFastStart(filepath string) (string, error) {
+	outputFile := filepath + ".processing"
+	fmt.Printf("The original file is %v\n", filepath)
+	fmt.Printf("The output file is %v\n", outputFile)
+	cmd := exec.Command("/usr/bin/ffmpeg", "-i", filepath, "-c", "copy", "-movflags", "faststart", "-f", "mp4", outputFile)
+	err := cmd.Run()
+	if err != nil {
+		fmt.Println("Error running ffmpeg", err)
+		return "", err
+	}
+	return outputFile, nil
 }
