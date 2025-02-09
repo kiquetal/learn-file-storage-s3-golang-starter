@@ -67,3 +67,7 @@ go run .
 ## 4. Create new user
 admin@boot.dev
 admin
+
+
+## .tables
+## delete from videos
